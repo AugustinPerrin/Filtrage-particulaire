@@ -105,7 +105,7 @@ def motion_model(x, u):
 def observation_model(xVeh, iFeature, Map):
     Delta = Map[0:2, iFeature:(iFeature+1)]-xVeh[0:2]
     z = np.array([[np.linalg.norm(Delta)], [
-        atan2(Delta[1], Delta[0]) - xVeh[2, 0]]])
+        atan2(Delta[1][0], Delta[0][0]) - xVeh[2, 0]]])
     z[1, 0] = angle_wrap(z[1, 0])
     return z
 
@@ -207,7 +207,7 @@ for k in range(1, nSteps):
             Innov[1] = angle_wrap(Innov[1])
 
             # Compute particle weight using gaussian model
-            L[p] = np.exp(-0.5 * Innov.T @ np.linalg.inv(PYEst) @ Innov) + 1e-3
+            L[p] = (np.exp(-0.5 * Innov.T @ np.linalg.inv(PYEst) @ Innov) + 1e-3)[0][0]
 
     # Compute position as weighted mean of particles
     xEst = np.average(xParticles, axis=1, weights=L)
