@@ -219,7 +219,9 @@ for k in range(1, nSteps):
     xSTD = np.expand_dims(xSTD, axis=1)
 
     # Particle resampling
-    xParticles, L = re_sampling(xParticles, L)
+    # rajouter conditions if : selon condition de rééchantillonage, 
+    # on rééchantillone ou pas
+    # xParticles, L = re_sampling(xParticles, L)
 
     # store data history
     hxTrue = np.hstack((hxTrue, xTrue))
