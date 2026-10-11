@@ -33,6 +33,7 @@ def partie_1():
         g(rd.uniform(0, 1, size=(nombre_realisations, n_tcl))),
         axis=1,
     )
+    
     estimations_normalisees = (estimations - mu) / np.sqrt(V_n(n_tcl))
     probabilites = (np.arange(1, nombre_realisations + 1) - 0.5) / nombre_realisations
     loi_normale = NormalDist()
@@ -40,7 +41,7 @@ def partie_1():
         [loi_normale.inv_cdf(p) for p in probabilites]
     )
     
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(17, 5))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
     ax1.plot(X, Y)
     ax1.set_title("Convergence de V")
     ax1.set_xlabel("N")
@@ -69,14 +70,85 @@ def partie_1():
     fig.tight_layout()
     plt.show()
 
-    # # calcul de l'intégrale en choisissant une bonne densité
-    # force brute
-    q = rd.uniform
+    # Tracé des fonctions q, g*q, q_tilde
+    
+    # g(x) : défini au-dessus
+    q = lambda x: 1 if x<=1 and x>=0 else 0
+    q_tilde = lambda x: (3/2)*(1-x**2)
 
-    # autre choix
-    q = lambda x: (3/2) * (1-x**2)
+    X = np.linspace(0,1,50)
+    Q = [q(x) for x in X]
+    GQ = [q(x)*g(x) for x in X]
+    Q_tilde = [q_tilde(x) for x in X]
 
-    # évaluation de l'intégrale
+    plt.plot(X,Q, label = "q(x)")
+    plt.plot(X, GQ, label = "g(x)*q(x)")
+    plt.plot(X, Q_tilde, label = "q_tilde(x)")
+    plt.xlabel("x")
+    plt.title("Tracé des lois de probabilité")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+
+# def methode_rejet():
+#     """
+#     implémentation de la méthode des rejets
+#     """
+
+#     g = lambda x: np.cos((np.pi * x)/2)
+#     # Majorant de g
+#     C = 1
+
+#     # Probabilité d'acceptation
+#     P = (1/C) * (2/np.pi) 
+#     # Couples acceptés
+#     c_a = []
+#     # Couples rejetés
+#     c_r = []
+#     # On tire X ~ q
+#     X = rd.uniform(0,1)
+#     U = rd.uniform(0,1)
+
+#     if g(X) > C*U:
+#         c_a.append([X,U])
+#     elif rd.uniform(0,1) < P:
+#         c_a.append([X,U])
+#     else:
+#         c_r.append([X,U])
+
+
+def methode_rejet():
+    """
+    implémentation de la méthode des rejets
+    """
+    g = lambda x: np.cos((np.pi * x)/2)
+
+    nombre_tirages = 1000
+    X = rd.uniform(0, 1, nombre_tirages)
+    U = rd.uniform(0, 1, nombre_tirages)
+    acceptes = U <= g(X)
+    rejetes = ~acceptes
+    print(f"Voici acceptes : {acceptes}\n Voici rejetes : {rejetes}")
+
+    x_courbe = np.linspace(0, 1, 500)
+    plt.scatter(X[acceptes], U[acceptes], color="yellow", s=12, label="Points acceptés")
+    plt.scatter(X[rejetes], U[rejetes], color="red", s=12, label="Points rejetés")
+    plt.plot(x_courbe, g(x_courbe), color="blue", label="g(x)")
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel("x")
+    plt.ylabel("u")
+    plt.title("Méthode du rejet")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    proba_empirique = len(X[acceptes])/len(X)
+    print(f"Voici la probabilité numérique : {proba_empirique}, et la probabilité théorique : {2/np.pi}")
+
+    return None
     
 if __name__ == "__main__":
-    partie_1()
+    # partie_1()
+    methode_rejet()
