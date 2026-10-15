@@ -135,7 +135,7 @@ def methode_rejet():
     """
     g = lambda x: np.cos((np.pi * x)/2)
 
-    nombre_tirages = 1000
+    nombre_tirages = 100
 
     # Rejet avec une proposition uniforme sur [0, 1].
     X = rd.uniform(0, 1, nombre_tirages)
@@ -179,7 +179,8 @@ def methode_rejet():
         return rapport
 
     # Inversion de F(x) = (3x - x**3) / 2, la fonction de répartition de q_tilde.
-    X = 2 * np.sin(np.arcsin(rd.uniform(0, 1, nombre_tirages)) / 3)
+    y = rd.uniform(0, 1, nombre_tirages)
+    X = 2 * np.cos((2 * np.pi - np.arccos(-y)) / 3)
     U = rd.uniform(0, 1, nombre_tirages)
     constante_rejet = 2 / 3
     acceptes = U <= gqqtilde(X) / constante_rejet
@@ -211,7 +212,7 @@ def methode_rejet():
     )
 
     # Variance de l'estimateur par fréquence d'acceptation.
-    nombre_realisations = 1000
+    nombre_realisations = 100
     mu_numerique = integrate.quad(lambda x: g(x), 0, 1)[0]
 
     X_uniforme = rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
@@ -267,6 +268,7 @@ def methode_rejet():
         f"empirique = {np.var(estimations_importance_qtilde, ddof=1):.6g}"
     )
 
+    # comparaison des lois (vérification du TCL)
     return None
     
 if __name__ == "__main__":
