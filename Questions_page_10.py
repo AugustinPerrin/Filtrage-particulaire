@@ -2,6 +2,9 @@ import numpy as np
 import numpy.random as rd
 import matplotlib.pyplot as plt
 from statistics import NormalDist
+import scipy.integrate as integrate
+import scipy.special as special
+
 
 def partie_1():
     """
@@ -17,9 +20,17 @@ def partie_1():
     X = np.linspace(1,50,50)
     Y = [V_n(x) for x in X]
 
-    # vérification numérique du TCL
+    # tirage de l'estimateur
     g = lambda x: np.cos((np.pi * x)/2)
     mu_n = lambda n: np.sum(g(rd.uniform(0, 1, n)))*(1/n)
+    N = 100
+    I = [-(np.sqrt(V)/np.sqrt(N))*1.96+mu,(np.sqrt(V)/np.sqrt(N))*1.96+mu]
+    print(
+        f"Estimateur \mu = {mu_n(N)}\n"
+        f"Intervalle de confiance : P[\mu_N \in I]=0.95, I = [{I[0]};{I[1]}]"
+    )
+
+    # vérification numérique du TCL
     realisation_mu_n = [mu_n(i) for i in range(1,51)]
     print(
         f"mu_n = {realisation_mu_n}; mu = {mu}, "
@@ -120,16 +131,17 @@ def partie_1():
 
 def methode_rejet():
     """
-    implémentation de la méthode des rejets
+    Compare la méthode du rejet avec une proposition uniforme et q_tilde.
     """
     g = lambda x: np.cos((np.pi * x)/2)
 
     nombre_tirages = 1000
+
+    # Rejet avec une proposition uniforme sur [0, 1].
     X = rd.uniform(0, 1, nombre_tirages)
     U = rd.uniform(0, 1, nombre_tirages)
     acceptes = U <= g(X)
     rejetes = ~acceptes
-    print(f"Voici acceptes : {acceptes}\n Voici rejetes : {rejetes}")
 
     x_courbe = np.linspace(0, 1, 500)
     plt.scatter(X[acceptes], U[acceptes], color="yellow", s=12, label="Points acceptés")
@@ -139,13 +151,121 @@ def methode_rejet():
     plt.ylim(0, 1)
     plt.xlabel("x")
     plt.ylabel("u")
-    plt.title("Méthode du rejet")
+    plt.title("Méthode du rejet force brute")
     plt.legend()
     plt.grid()
     plt.show()
 
-    proba_empirique = len(X[acceptes])/len(X)
-    print(f"Voici la probabilité numérique : {proba_empirique}, et la probabilité théorique : {2/np.pi}")
+    proba_empirique = np.mean(acceptes)
+    print(
+        "Rejet uniforme : "
+        f"probabilité d'acceptation empirique = {proba_empirique:.4f}, "
+        f"théorique = {2 / np.pi:.4f}"
+    )
+
+    # Rejet avec q_tilde comme densité de proposition.
+    q_tilde = lambda x: (3/2)*(1-x**2)
+
+    def gqqtilde(x):
+        """Rapport entre la cible non normalisée et la densité q_tilde."""
+        x = np.asarray(x, dtype=float)
+        rapport = np.full_like(x, np.pi / 6)
+        np.divide(
+            g(x),
+            q_tilde(x),
+            out=rapport,
+            where=(x != 1),
+        )
+        return rapport
+
+    # Inversion de F(x) = (3x - x**3) / 2, la fonction de répartition de q_tilde.
+    X = 2 * np.sin(np.arcsin(rd.uniform(0, 1, nombre_tirages)) / 3)
+    U = rd.uniform(0, 1, nombre_tirages)
+    constante_rejet = 2 / 3
+    acceptes = U <= gqqtilde(X) / constante_rejet
+    rejetes = ~acceptes
+
+    plt.scatter(X[acceptes], U[acceptes], color="yellow", s=12, label="Points acceptés")
+    plt.scatter(X[rejetes], U[rejetes], color="red", s=12, label="Points rejetés")
+    plt.plot(
+        x_courbe,
+        gqqtilde(x_courbe) / constante_rejet,
+        color="blue",
+        label="g(x) / (C q_tilde(x))",
+    )
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel("x")
+    plt.ylabel("u")
+    plt.title("Méthode du rejet avec q_tilde")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    proba_empirique = np.mean(acceptes)
+    proba_theorique = (2 / np.pi) / constante_rejet
+    print(
+        "Rejet avec q_tilde : "
+        f"probabilité d'acceptation empirique = {proba_empirique:.4f}, "
+        f"théorique = {proba_theorique:.4f}"
+    )
+
+    # Variance de l'estimateur par fréquence d'acceptation.
+    nombre_realisations = 1000
+    mu_numerique = integrate.quad(lambda x: g(x), 0, 1)[0]
+
+    X_uniforme = rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
+    U_uniforme = rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
+    estimations_uniformes = np.mean(U_uniforme <= g(X_uniforme), axis=1)
+
+    X_qtilde = 2 * np.sin(
+        np.arcsin(rd.uniform(0, 1, (nombre_realisations, nombre_tirages))) / 3
+    )
+    U_qtilde = rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
+    estimations_qtilde = constante_rejet * np.mean(
+        U_qtilde <= gqqtilde(X_qtilde) / constante_rejet,
+        axis=1,
+    )
+
+    variance_uniforme_theorique = (
+        mu_numerique * (1 - mu_numerique) / nombre_tirages
+    )
+    variance_qtilde_theorique = (
+        constante_rejet * mu_numerique - mu_numerique**2
+    ) / nombre_tirages
+    print(
+        f"Variances de l'estimateur de l'intégrale (n={nombre_tirages}, "
+        f"{nombre_realisations} répétitions) :\n"
+        f"  uniforme : théorique numérique = {variance_uniforme_theorique:.6g}, "
+        f"empirique = {np.var(estimations_uniformes, ddof=1):.6g}\n"
+        f"  q_tilde  : théorique numérique = {variance_qtilde_theorique:.6g}, "
+        f"empirique = {np.var(estimations_qtilde, ddof=1):.6g}"
+    )
+
+    # Variance des estimateurs d'importance g(X) et g(X) / q_tilde(X).
+    estimations_importance_uniforme = np.mean(g(X_uniforme), axis=1)
+    estimations_importance_qtilde = np.mean(gqqtilde(X_qtilde), axis=1)
+    variance_g_uniforme = (
+        integrate.quad(lambda x: g(x) ** 2, 0, 1)[0] - mu_numerique**2
+    )
+    variance_g_qtilde = (
+        integrate.quad(
+            lambda x: float(q_tilde(x) * gqqtilde(x) ** 2),
+            0,
+            1,
+        )[0]
+        - mu_numerique**2
+    )
+    print(
+        f"Variances des estimateurs d'importance (n={nombre_tirages}, "
+        f"{nombre_realisations} répétitions) :\n"
+        f"  uniforme : théorique numérique = "
+        f"{variance_g_uniforme / nombre_tirages:.6g}, "
+        f"empirique = {np.var(estimations_importance_uniforme, ddof=1):.6g}\n"
+        f"  q_tilde  : théorique numérique = "
+        f"{variance_g_qtilde / nombre_tirages:.6g}, "
+        f"empirique = {np.var(estimations_importance_qtilde, ddof=1):.6g}"
+    )
 
     return None
     
