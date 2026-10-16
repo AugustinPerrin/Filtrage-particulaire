@@ -79,7 +79,8 @@ def get_odometry(k):
 # generate a noisy observation of a random feature
 def get_observation(k):
     global Map, xTrue, PYTrue
-    if (k > 100 and k < 100):
+    # sensor failure used in the TP
+    if (k >= failureStart and k < failureEnd):
         z = None
         iFeature = -1
     else:
@@ -130,13 +131,32 @@ def re_sampling(px, pw):
         indexes.append(ind)
 
     px = px[:, indexes]
-    pw = pw[indexes]
+    # after resampling, all particles have the same weight
+    pw = np.ones(nParticles) / nParticles
 
     return px, pw
 
 
-# Nb of particle in the filter
+# ---- Parameters to change for the TP ----
+
+# Nb of particles in the filter
 nParticles = 1000
+
+# Initial spread of the particle cloud
+initialSTD = np.array([1.0, 1.0, 0.1])
+
+# Multiplicative factors used by the filter
+# Try values smaller than, equal to and larger than 1
+QEstFactor = 2.0
+PYEstFactor = 2.0
+
+# SIR resampling
+useResampling = True
+resamplingThreshold = 0.5   # resample if Neff < 0.5*N
+
+# Sensor failure
+failureStart = 400
+failureEnd = 500
 
 # Simulation length
 nSteps = 1000
@@ -148,16 +168,16 @@ Map = 120*np.random.rand(2, 20)-60
 QTrue = np.diag([0.02, 0.02, 1*pi/180]) ** 2
 PYTrue = np.diag([0.5, 1*pi/180]) ** 2
 
-# Modeled errors used in the Kalman filter process
-QEst = 2 * np.eye(3, 3) @ QTrue
-PYEst = 2 * np.eye(2, 2) @ PYTrue
+# Modeled errors used in the particle filter
+QEst = QEstFactor * QTrue
+PYEst = PYEstFactor * PYTrue
 
 # initial conditions
 xTrue = np.array([[1, -50, 0]]).T
 xOdom = xTrue
 
 # initial conditions: - a point cloud around truth
-xParticles = xTrue + np.diag([1, 1, 0.1]) @ np.random.randn(3, nParticles)
+xParticles = xTrue + np.diag(initialSTD) @ np.random.randn(3, nParticles)
 
 # initial conditions: global localization
 # xParticles = 120 * np.random.rand(3, nParticles)-60
@@ -180,6 +200,9 @@ err = xEst - xTrue
 err[2, 0] = angle_wrap(err[2, 0])
 hxError = err
 hxSTD = xSTD
+nResampling = 0
+hNeff = []
+startTime = time.time()
 
 for k in range(1, nSteps):
     # Simlulate robot motion
@@ -207,7 +230,18 @@ for k in range(1, nSteps):
             Innov[1] = angle_wrap(Innov[1])
 
             # Compute particle weight using gaussian model
-            L[p] = (np.exp(-0.5 * Innov.T @ np.linalg.inv(PYEst) @ Innov) + 1e-3)[0][0]
+            likelihood = np.exp(-0.5 * Innov.T @ np.linalg.inv(PYEst) @ Innov)[0][0]
+            L[p] = L[p] * likelihood
+
+        # Normalize weights
+        if np.sum(L) == 0:
+            L = np.ones(nParticles) / nParticles
+        else:
+            L = L / np.sum(L)
+
+    # Effective number of particles
+    Neff = 1.0 / np.sum(L**2)
+    hNeff.append(Neff / nParticles)
 
     # Compute position as weighted mean of particles
     xEst = np.average(xParticles, axis=1, weights=L)
@@ -218,10 +252,10 @@ for k in range(1, nSteps):
                    axis=1, weights=L / np.sum(L)))
     xSTD = np.expand_dims(xSTD, axis=1)
 
-    # Particle resampling
-    # rajouter conditions if : selon condition de rééchantillonage, 
-    # on rééchantillone ou pas
-    # xParticles, L = re_sampling(xParticles, L)
+    # Particle resampling (SIR)
+    if useResampling and Neff < resamplingThreshold * nParticles:
+        xParticles, L = re_sampling(xParticles, L)
+        nResampling += 1
 
     # store data history
     hxTrue = np.hstack((hxTrue, xTrue))
@@ -233,7 +267,7 @@ for k in range(1, nSteps):
     hxSTD = np.hstack((hxSTD, xSTD))
 
     # plot every 20 updates
-    if k % 20 == 0:
+    if show_animation and k % 20 == 0:
         # for stopping simulation with the esc key.
         plt.gcf().canvas.mpl_connect('key_release_event',
                     lambda event: [exit(0) if event.key == 'escape' else None])
@@ -284,7 +318,27 @@ for k in range(1, nSteps):
 
 
 plt.savefig('ParticleFilter_Localization.png')
+
 tErrors = np.sqrt(np.square(hxError[0, :]) + np.square(hxError[1, :]))
+endTime = time.time()
+
 print("Mean (var) translation error : {:e} ({:e})".format(np.mean(tErrors), np.var(tErrors)))
+print("Mean error before failure : {:.3f} m".format(np.mean(tErrors[:failureStart])))
+print("Mean error during failure : {:.3f} m".format(np.mean(tErrors[failureStart:failureEnd])))
+print("Mean error after failure : {:.3f} m".format(np.mean(tErrors[failureEnd:])))
+print("Number of resamplings : {}".format(nResampling))
+print("Computation time : {:.2f} s".format(endTime-startTime))
 print("Press Q in figure to finish...")
+
+plt.figure()
+
+plt.plot(hNeff)
+plt.axhline(resamplingThreshold, linestyle='--', label='Seuil beta = 0.5')
+
+plt.xlabel('k')
+plt.ylabel(r'$N_{\mathrm{eff}}/N$')
+plt.grid(True)
+plt.legend()
+
+plt.savefig('Evolution_Neff.png')
 plt.show()
