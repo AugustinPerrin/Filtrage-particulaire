@@ -212,7 +212,7 @@ def methode_rejet():
     )
 
     # Variance de l'estimateur par fréquence d'acceptation.
-    nombre_realisations = 100
+    nombre_realisations = 1000
     mu_numerique = integrate.quad(lambda x: g(x), 0, 1)[0]
 
     X_uniforme = rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
@@ -268,7 +268,200 @@ def methode_rejet():
         f"empirique = {np.var(estimations_importance_qtilde, ddof=1):.6g}"
     )
 
-    # comparaison des lois (vérification du TCL)
+    # Comparaison des distributions empiriques à leurs approximations normales.
+    variance_mc = variance_g_uniforme / nombre_tirages
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    comparaisons = (
+        (
+            axes[0],
+            estimations_qtilde,
+            variance_qtilde_theorique,
+            "Rejet avec q_tilde",
+        ),
+        (
+            axes[1],
+            estimations_importance_uniforme,
+            variance_mc,
+            "Monte Carlo classique",
+        ),
+    )
+
+    for ax, estimations, variance, methode in comparaisons:
+        ecart_type = np.sqrt(variance)
+        valeurs_normales = np.linspace(
+            mu_numerique - 4 * ecart_type,
+            mu_numerique + 4 * ecart_type,
+            300,
+        )
+        densite_normale = np.exp(
+            -0.5 * ((valeurs_normales - mu_numerique) / ecart_type) ** 2
+        ) / (ecart_type * np.sqrt(2 * np.pi))
+
+        ax.hist(
+            estimations,
+            bins=30,
+            density=True,
+            alpha=0.6,
+            label="Histogramme des estimateurs",
+        )
+        ax.plot(
+            valeurs_normales,
+            densite_normale,
+            color="red",
+            linewidth=2,
+            label=(
+                f"Normale N({mu_numerique:.3f}, "
+                f"{variance:.4g})"
+            ),
+        )
+        ax.axvline(
+            mu_numerique,
+            color="black",
+            linestyle="--",
+            label="Valeur théorique",
+        )
+        ax.set_title(methode)
+        ax.set_xlabel("Valeur de l'estimateur")
+        ax.set_ylabel("Densité")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        f"Estimateurs de l'intégrale (n={nombre_tirages}, "
+        f"{nombre_realisations} répétitions)"
+    )
+    fig.tight_layout()
+    plt.show()
+
+    # Rejet avec q(x) = 2(1-x), de fonction de répartition inverse
+    # F^{-1}(y) = 1 - sqrt(1-y) sur [0, 1].
+    q_lineaire = lambda x: 2 * (1 - x)
+    constante_rejet_lineaire = np.pi / 4
+
+    def rapport_rejet_lineaire(x):
+        x = np.asarray(x, dtype=float)
+        rapport = np.full_like(x, constante_rejet_lineaire)
+        np.divide(
+            g(x),
+            q_lineaire(x),
+            out=rapport,
+            where=(x != 1),
+        )
+        return rapport
+
+    y_lineaire = rd.uniform(0, 1, nombre_tirages)
+    X_lineaire = 1 - np.sqrt(1 - y_lineaire)
+    U_lineaire = rd.uniform(0, 1, nombre_tirages)
+    seuil_acceptation = (
+        rapport_rejet_lineaire(X_lineaire) / constante_rejet_lineaire
+    )
+    acceptes_lineaire = U_lineaire <= seuil_acceptation
+    rejetes_lineaire = ~acceptes_lineaire
+
+    plt.scatter(
+        X_lineaire[acceptes_lineaire],
+        U_lineaire[acceptes_lineaire],
+        color="yellow",
+        s=12,
+        label="Points acceptés",
+    )
+    plt.scatter(
+        X_lineaire[rejetes_lineaire],
+        U_lineaire[rejetes_lineaire],
+        color="red",
+        s=12,
+        label="Points rejetés",
+    )
+    plt.plot(
+        x_courbe,
+        rapport_rejet_lineaire(x_courbe) / constante_rejet_lineaire,
+        color="blue",
+        label="g(x) / (C q(x))",
+    )
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel("x")
+    plt.ylabel("u")
+    plt.title("Méthode du rejet avec q(x) = 2(1-x)")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    proba_empirique_lineaire = np.mean(acceptes_lineaire)
+    proba_theorique_lineaire = mu_numerique / constante_rejet_lineaire
+    print(
+        "Rejet avec q(x) = 2(1-x) : "
+        f"probabilité d'acceptation empirique = "
+        f"{proba_empirique_lineaire:.4f}, "
+        f"théorique = {proba_theorique_lineaire:.4f}"
+    )
+
+    X_lineaire_repetitions = 1 - np.sqrt(
+        1 - rd.uniform(0, 1, (nombre_realisations, nombre_tirages))
+    )
+    U_lineaire_repetitions = rd.uniform(
+        0, 1, (nombre_realisations, nombre_tirages)
+    )
+    estimations_lineaire = constante_rejet_lineaire * np.mean(
+        U_lineaire_repetitions
+        <= rapport_rejet_lineaire(X_lineaire_repetitions)
+        / constante_rejet_lineaire,
+        axis=1,
+    )
+    variance_lineaire = (
+        constante_rejet_lineaire * mu_numerique - mu_numerique**2
+    ) / nombre_tirages
+    print(
+        f"Estimateur par rejet avec q(x) = 2(1-x) (n={nombre_tirages}, "
+        f"{nombre_realisations} répétitions) :\n"
+        f"  variance théorique = {variance_lineaire:.6g}, "
+        f"empirique = {np.var(estimations_lineaire, ddof=1):.6g}"
+    )
+
+    ecart_type_lineaire = np.sqrt(variance_lineaire)
+    valeurs_normales_lineaire = np.linspace(
+        mu_numerique - 4 * ecart_type_lineaire,
+        mu_numerique + 4 * ecart_type_lineaire,
+        300,
+    )
+    densite_normale_lineaire = np.exp(
+        -0.5
+        * ((valeurs_normales_lineaire - mu_numerique) / ecart_type_lineaire)
+        ** 2
+    ) / (ecart_type_lineaire * np.sqrt(2 * np.pi))
+
+    plt.hist(
+        estimations_lineaire,
+        bins=30,
+        density=True,
+        alpha=0.6,
+        label="Histogramme des estimateurs",
+    )
+    plt.plot(
+        valeurs_normales_lineaire,
+        densite_normale_lineaire,
+        color="red",
+        linewidth=2,
+        label=(
+            f"Normale N({mu_numerique:.3f}, "
+            f"{variance_lineaire:.4g})"
+        ),
+    )
+    plt.axvline(
+        mu_numerique,
+        color="black",
+        linestyle="--",
+        label="Valeur théorique",
+    )
+    plt.xlabel("Valeur de l'estimateur")
+    plt.ylabel("Densité")
+    plt.title("Estimateur de rejet avec q(x) = 2(1-x)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
     return None
     
 if __name__ == "__main__":
